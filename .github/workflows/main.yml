@@ -1,0 +1,70 @@
+name: Daily Motivation Video
+
+on:
+  schedule:
+    - cron: "30 2 * * *"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+      LLM_PROVIDER: ${{ vars.LLM_PROVIDER }}
+      LLM_MODEL: ${{ vars.LLM_MODEL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: System packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg imagemagick
+          sudo sed -i 's/rights="none" pattern="@\*"/rights="read|write" pattern="@*"/' /etc/ImageMagick-6/policy.xml || true
+
+      - name: Get MoneyPrinterTurbo
+        run: |
+          git clone --depth 1 https://github.com/harry0703/MoneyPrinterTurbo.git Turbo
+          pip install -r Turbo/requirements.txt
+          pip install requests google-api-python-client google-auth
+
+      - name: Write Turbo config
+        run: python scripts/write_config.py
+
+      - name: Start Turbo API
+        run: |
+          cd Turbo
+          nohup python main.py > ../turbo.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -s http://127.0.0.1:8080/docs > /dev/null && echo "Turbo is up" && exit 0
+            sleep 3
+          done
+          echo "Turbo did not start"; cat ../turbo.log; exit 1
+
+      - name: Make video
+        run: python scripts/make_video.py
+
+      - name: Save video as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: video
+          path: output/
+
+      - name: Upload to YouTube
+        if: ${{ env.YT_REFRESH_TOKEN != '' }}
+        env:
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_PRIVACY: ${{ vars.YT_PRIVACY }}
+        run: python scripts/upload_youtube.py
+
+      - name: Show Turbo log on failure
+        if: failure()
+        run: tail -n 120 turbo.log || true
