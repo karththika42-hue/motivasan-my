@@ -1,0 +1,32 @@
+{
+  "themes": [
+    "discipline over motivation",
+    "turning failure into fuel",
+    "deep focus in a distracted world",
+    "money mindset and patience",
+    "winning the early morning",
+    "self-belief when nobody believes in you",
+    "consistency beats talent",
+    "starting before you feel ready",
+    "handling rejection",
+    "building a new identity"
+  ],
+  "formats": [
+    {"name": "speech", "instruction": "A powerful spoken monologue addressed to 'you', building to a strong ending line."},
+    {"name": "3 rules", "instruction": "Three numbered rules, each one short, concrete and punchy, then a closing line."},
+    {"name": "short story", "instruction": "A very short original story about one person facing a struggle, with a lesson at the end."},
+    {"name": "question and answer", "instruction": "Open with a hard question the viewer is avoiding, then answer it honestly in steps."},
+    {"name": "letter to yourself", "instruction": "Written as advice from the viewer's future self to the present self."},
+    {"name": "myth busting", "instruction": "Name one common myth about success, break it, and give the truth."}
+  ],
+  "styles": [
+    {"name": "deep calm", "voice": "en-US-GuyNeural-Male", "voice_rate": 0.95, "aspect": "9:16", "clip_duration": 4, "footage": "cinematic sunrise mountain", "font_color": "#FFFFFF", "stroke_color": "#000000", "position": "center", "font_size": 70, "words": 120},
+    {"name": "gold city", "voice": "en-US-AndrewNeural-Male", "voice_rate": 1.0, "aspect": "9:16", "clip_duration": 3, "footage": "city night skyline", "font_color": "#FFD700", "stroke_color": "#000000", "position": "bottom", "font_size": 66, "words": 110},
+    {"name": "british grit", "voice": "en-GB-RyanNeural-Male", "voice_rate": 1.0, "aspect": "9:16", "clip_duration": 4, "footage": "gym workout training", "font_color": "#FFFFFF", "stroke_color": "#8B0000", "position": "center", "font_size": 72, "words": 115},
+    {"name": "rain focus", "voice": "en-US-ChristopherNeural-Male", "voice_rate": 0.9, "aspect": "9:16", "clip_duration": 5, "footage": "rain window dark moody", "font_color": "#7FDBFF", "stroke_color": "#000000", "position": "bottom", "font_size": 64, "words": 105},
+    {"name": "runner", "voice": "en-US-EricNeural-Male", "voice_rate": 1.05, "aspect": "9:16", "clip_duration": 3, "footage": "man running road sunrise", "font_color": "#FFFFFF", "stroke_color": "#FF4500", "position": "center", "font_size": 70, "words": 125},
+    {"name": "nature long", "voice": "en-US-GuyNeural-Male", "voice_rate": 0.95, "aspect": "16:9", "clip_duration": 5, "footage": "forest river nature cinematic", "font_color": "#FFFFFF", "stroke_color": "#000000", "position": "bottom", "font_size": 56, "words": 220},
+    {"name": "ocean", "voice": "en-GB-RyanNeural-Male", "voice_rate": 0.92, "aspect": "9:16", "clip_duration": 4, "footage": "ocean waves storm", "font_color": "#00FFC6", "stroke_color": "#000000", "position": "center", "font_size": 68, "words": 110},
+    {"name": "desert", "voice": "en-US-AndrewNeural-Male", "voice_rate": 0.97, "aspect": "9:16", "clip_duration": 4, "footage": "desert dunes sunset lone walker", "font_color": "#FFB347", "stroke_color": "#000000", "position": "bottom", "font_size": 66, "words": 115}
+  ]
+}
