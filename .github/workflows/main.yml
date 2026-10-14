@@ -2,7 +2,7 @@ name: Daily Motivation Video
 
 on:
   schedule:
-    - cron: "30 2 * * *"
+    - cron: "30 2 * * *"   # every day 02:30 UTC
   workflow_dispatch:
 
 jobs:
@@ -22,6 +22,229 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      - name: Check required files and keys
+        run: |
+          test -f templates.json || { echo "templates.json is missing from the repo"; exit 1; }
+          test -n "$PEXELS_API_KEY" || { echo "PEXELS_API_KEY secret is missing"; exit 1; }
+          if [ -z "$GEMINI_API_KEY" ] && [ -z "$OPENROUTER_API_KEY" ]; then echo "Add GEMINI_API_KEY or OPENROUTER_API_KEY"; exit 1; fi
+
+      - name: Create scripts
+        run: |
+          mkdir -p scripts
+          cat > scripts/write_config.py << 'PYEOF'
+          import os
+          import re
+
+          pexels = os.environ.get("PEXELS_API_KEY", "")
+          gem = os.environ.get("GEMINI_API_KEY", "")
+          orr = os.environ.get("OPENROUTER_API_KEY", "")
+          provider = (os.environ.get("LLM_PROVIDER") or "").lower()
+          if not provider:
+              provider = "gemini" if gem or not orr else "openrouter"
+          model = os.environ.get("LLM_MODEL", "")
+
+          settings = {"video_source": '"pexels"', "pexels_api_keys": f'["{pexels}"]'}
+          if provider == "openrouter":
+              settings.update({
+                  "llm_provider": '"openai"',
+                  "openai_api_key": f'"{orr}"',
+                  "openai_base_url": '"https://openrouter.ai/api/v1"',
+                  "openai_model_name": f'"{model or "google/gemini-2.5-flash"}"',
+              })
+          else:
+              settings.update({
+                  "llm_provider": '"gemini"',
+                  "gemini_api_key": f'"{gem}"',
+                  "gemini_model_name": f'"{model or "gemini-2.5-flash"}"',
+              })
+
+          src = "Turbo/config.example.toml"
+          text = open(src, encoding="utf-8").read() if os.path.exists(src) else "[app]\n"
+
+          for key, val in settings.items():
+              pat = re.compile(rf"^(\s*){key}\s*=.*$", re.M)
+              if pat.search(text):
+                  text = pat.sub(lambda m: f"{m.group(1)}{key} = {val}", text, count=1)
+              else:
+                  text = text.replace("[app]", f"[app]\n{key} = {val}", 1)
+
+          open("Turbo/config.toml", "w", encoding="utf-8").write(text)
+          print("config.toml written, LLM provider:", provider)
+          PYEOF
+          cat > scripts/make_video.py << 'PYEOF'
+          import datetime
+          import glob
+          import json
+          import os
+          import shutil
+          import sys
+          import time
+
+          import requests
+
+          API = "http://127.0.0.1:8080/api/v1"
+
+
+          def provider():
+              p = (os.environ.get("LLM_PROVIDER") or "").lower()
+              if p:
+                  return p
+              if os.environ.get("GEMINI_API_KEY") or not os.environ.get("OPENROUTER_API_KEY"):
+                  return "gemini"
+              return "openrouter"
+
+
+          def pick():
+              t = json.load(open("templates.json", encoding="utf-8"))
+              d = datetime.date.today().timetuple().tm_yday
+              theme = t["themes"][d % len(t["themes"])]
+              fmt = t["formats"][(d + d // len(t["themes"])) % len(t["formats"])]
+              style = t["styles"][(d * 3 + 1) % len(t["styles"])]
+              return theme, fmt, style
+
+
+          def ask_llm(prompt):
+              model = os.environ.get("LLM_MODEL", "")
+              if provider() == "openrouter":
+                  r = requests.post(
+                      "https://openrouter.ai/api/v1/chat/completions",
+                      headers={"Authorization": "Bearer " + os.environ["OPENROUTER_API_KEY"]},
+                      json={"model": model or "google/gemini-2.5-flash",
+                            "messages": [{"role": "user", "content": prompt}],
+                            "response_format": {"type": "json_object"}},
+                      timeout=120)
+                  r.raise_for_status()
+                  text = r.json()["choices"][0]["message"]["content"]
+              else:
+                  m = model or "gemini-2.5-flash"
+                  r = requests.post(
+                      f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent",
+                      params={"key": os.environ["GEMINI_API_KEY"]},
+                      json={"contents": [{"parts": [{"text": prompt}]}],
+                            "generationConfig": {"responseMimeType": "application/json"}},
+                      timeout=120)
+                  r.raise_for_status()
+                  text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+              text = text.strip().removeprefix("```json").removesuffix("```").strip()
+              return json.loads(text)
+
+
+          def main():
+              theme, fmt, style = pick()
+              print("Theme:", theme, "| Format:", fmt["name"], "| Style:", style["name"], "| LLM:", provider())
+
+              prompt = f"""You write original English motivational video scripts for a YouTube channel.
+          Theme: {theme}
+          Format: {fmt['name']} - {fmt['instruction']}
+          Length: about {style['words']} words of spoken text.
+          Rules: plain spoken English, no emojis, no hashtags, no stage directions, no headings, no quotes copied from famous speeches. Fresh angle, concrete images, strong last line.
+          Return ONLY JSON with keys:
+          "title" (max 70 chars, catchy),
+          "description" (2 sentences),
+          "script" (the spoken text only),
+          "terms" (list of 6 short English stock-footage search terms, inspired by: {style['footage']})."""
+              data = ask_llm(prompt)
+              print("Title:", data["title"])
+
+              payload = {
+                  "video_subject": theme,
+                  "video_script": data["script"],
+                  "video_terms": ", ".join(data["terms"]),
+                  "video_aspect": style["aspect"],
+                  "video_concat_mode": "random",
+                  "video_clip_duration": style["clip_duration"],
+                  "video_count": 1,
+                  "video_source": "pexels",
+                  "video_language": "en-US",
+                  "voice_name": style["voice"],
+                  "voice_rate": style["voice_rate"],
+                  "voice_volume": 1.0,
+                  "bgm_type": "random",
+                  "bgm_volume": 0.15,
+                  "subtitle_enabled": True,
+                  "subtitle_position": style["position"],
+                  "text_fore_color": style["font_color"],
+                  "stroke_color": style["stroke_color"],
+                  "stroke_width": 1.5,
+                  "font_size": style["font_size"],
+                  "n_threads": 2,
+              }
+              r = requests.post(f"{API}/videos", json=payload, timeout=60)
+              if not r.ok:
+                  print("Turbo rejected the request:", r.status_code, r.text[:1500])
+                  sys.exit(1)
+              task_id = r.json()["data"]["task_id"]
+              print("Task:", task_id)
+
+              for _ in range(240):  # up to ~40 min
+                  time.sleep(10)
+                  info = requests.get(f"{API}/tasks/{task_id}", timeout=30).json()["data"]
+                  print("state", info.get("state"), "progress", info.get("progress"))
+                  if info.get("state") == 1:
+                      break
+                  if info.get("state") == -1:
+                      print("Turbo reported failure:", info)
+                      sys.exit(1)
+              else:
+                  print("Timed out")
+                  sys.exit(1)
+
+              files = glob.glob(f"Turbo/storage/tasks/{task_id}/final-*.mp4")
+              if not files:
+                  print("No final video found")
+                  sys.exit(1)
+
+              os.makedirs("output", exist_ok=True)
+              shutil.copy(files[0], "output/video.mp4")
+              json.dump({"title": data["title"], "description": data["description"],
+                         "theme": theme, "format": fmt["name"], "style": style["name"]},
+                        open("output/meta.json", "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+              print("Done: output/video.mp4")
+
+
+          if __name__ == "__main__":
+              main()
+          PYEOF
+          cat > scripts/upload_youtube.py << 'PYEOF'
+          import json
+          import os
+
+          from google.oauth2.credentials import Credentials
+          from googleapiclient.discovery import build
+          from googleapiclient.http import MediaFileUpload
+
+          meta = json.load(open("output/meta.json", encoding="utf-8"))
+
+          creds = Credentials(
+              None,
+              refresh_token=os.environ["YT_REFRESH_TOKEN"],
+              client_id=os.environ["YT_CLIENT_ID"],
+              client_secret=os.environ["YT_CLIENT_SECRET"],
+              token_uri="https://oauth2.googleapis.com/token",
+              scopes=["https://www.googleapis.com/auth/youtube.upload"],
+          )
+          yt = build("youtube", "v3", credentials=creds)
+
+          privacy = os.environ.get("YT_PRIVACY") or "private"
+          body = {
+              "snippet": {
+                  "title": meta["title"][:100],
+                  "description": meta["description"] + "\n\n#motivation #shorts",
+                  "categoryId": "22",
+              },
+              "status": {"privacyStatus": privacy, "selfDeclaredMadeForKids": False},
+          }
+          media = MediaFileUpload("output/video.mp4", chunksize=-1, resumable=True)
+          req = yt.videos().insert(part="snippet,status", body=body, media_body=media)
+
+          resp = None
+          while resp is None:
+              status, resp = req.next_chunk()
+              if status:
+                  print("Uploaded", int(status.progress() * 100), "%")
+          print("Video id:", resp["id"], "privacy:", privacy)
+          PYEOF
 
       - name: System packages
         run: |
